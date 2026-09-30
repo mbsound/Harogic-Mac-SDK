@@ -35,8 +35,18 @@ check-sdk:
 	@test -d "$(VENDOR)" || { echo "error: Harogic SDK not found at '$(SDK)'."; \
 	  echo "Unzip Harogic's Linux_API-x-y-z.zip and run: make SDK=path/to/Linux_API"; exit 1; }
 
-src/gen/exports.S src/gen/images.S src/gen/images.h src/gen/exports.txt: tools/gen_build.py tools/x18_patch.py $(wildcard $(VENDOR)/*)
-	python3 tools/gen_build.py $(VENDOR)
+# Regenerate when the SDK location or its library files change. (Paths may
+# contain spaces, so they are tracked through a stamp rather than as make
+# prerequisites.)
+SDK_STAMP := src/gen/.sdk-stamp
+
+$(SDK_STAMP): FORCE
+	@mkdir -p src/gen
+	@new="$$(cd "$(VENDOR)" && pwd; ls -l "$(VENDOR)")"; \
+	  [ -f $@ ] && [ "$$(cat $@)" = "$$new" ] || printf '%s\n' "$$new" > $@
+
+src/gen/exports.S src/gen/images.S src/gen/images.h src/gen/exports.txt: tools/gen_build.py tools/x18_patch.py $(SDK_STAMP)
+	python3 tools/gen_build.py "$(VENDOR)"
 
 $(BUILD)/%.o: src/%.c src/gen/images.h src/*.h
 	@mkdir -p $(dir $@)
@@ -59,13 +69,14 @@ EXAMPLES := $(BUILD)/swp_test $(BUILD)/mode_test
 examples: $(EXAMPLES)
 
 $(BUILD)/%: examples/%.c $(BUILD)/libhtraapi.dylib
-	$(CC) -arch arm64 -O2 -g -Wno-comment -I$(VENDOR_INC) $< -L$(BUILD) -lhtraapi \
+	$(CC) -arch arm64 -O2 -g -Wno-comment -I"$(VENDOR_INC)" $< -L$(BUILD) -lhtraapi \
 	  -Wl,-rpath,@executable_path -o $@
 
 dist: $(BUILD)/libhtraapi.dylib
-	sh tools/make_dist.sh $(BUILD) $(VENDOR_INC) $(VENDOR_CONF) dist/htraapi-macos-arm64
+	sh tools/make_dist.sh $(BUILD) "$(VENDOR_INC)" "$(VENDOR_CONF)" dist/htraapi-macos-arm64
 
 clean:
 	rm -rf $(BUILD) src/gen dist
 
-.PHONY: all check-sdk clean dist examples
+.PHONY: all check-sdk clean dist examples FORCE
+FORCE:
