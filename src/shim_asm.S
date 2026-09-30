@@ -151,6 +151,7 @@ _elf_trace_common:
     VARIADIC _lx_printf,          _lx_vprintf_impl,          1
     VARIADIC _lx_fprintf,         _lx_vfprintf_impl,         2
     VARIADIC _lx_snprintf,        _lx_vsnprintf_impl,        3
+    VARIADIC _lx_sprintf,         _lx_vsprintf_impl,         2
     VARIADIC _lx_sscanf,          _lx_vsscanf_impl,          2
     VARIADIC _lx_fscanf,          _lx_vfscanf_impl,          2
     VARIADIC _lx___printf_chk,    _lx___vprintf_chk_impl,    2

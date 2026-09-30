@@ -28,6 +28,7 @@ extern const struct shim_sym shim_net_syms[];
 extern const struct shim_sym shim_cxx_syms[];
 extern const struct shim_sym shim_usb_syms[];
 extern const struct shim_sym shim_fstream_syms[];
+extern const struct shim_sym shim_alloc_syms[];
 
 /* Translate a macOS errno value to its Linux equivalent. */
 int shim_errno_to_linux(int e);

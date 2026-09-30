@@ -122,7 +122,7 @@ static void *resolve_raw(const char *name, unsigned flags) {
 
     static const struct shim_sym *const tables[] = {
         shim_libc_syms, shim_pthread_syms, shim_net_syms, shim_cxx_syms, shim_usb_syms,
-        shim_fstream_syms,
+        shim_fstream_syms, shim_alloc_syms,
     };
     for (size_t i = 0; i < sizeof tables / sizeof tables[0]; i++) {
         void *p = find_in_table(tables[i], name);

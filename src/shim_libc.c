@@ -252,7 +252,14 @@ int lx_vsnprintf_impl(char *buf, size_t n, const char *fmt, lx_va_list *va) {
     uint64_t slots[MAX_SLOTS] = {0};
     char f[FMTBUF];
     repack_printf(fmt, va, slots, f, sizeof f);
+    /* macOS vsnprintf fails with EOVERFLOW for n > INT_MAX; glibc accepts it, and
+     * sprintf/__sprintf_chk pass "unbounded" sizes such as (size_t)-1. */
+    if (n > INT_MAX) n = INT_MAX;
     return vsnprintf(buf, n, f, (va_list)(void *)slots);
+}
+
+int lx_vsprintf_impl(char *buf, const char *fmt, lx_va_list *va) {
+    return lx_vsnprintf_impl(buf, INT_MAX, fmt, va);
 }
 
 int lx_vfprintf_impl(FILE *fp, const char *fmt, lx_va_list *va) {
@@ -317,6 +324,7 @@ static int lx___vfprintf_chk(FILE *fp, int flag, const char *fmt, lx_va_list *va
 extern int lx_printf(const char *, ...);
 extern int lx_fprintf(FILE *, const char *, ...);
 extern int lx_snprintf(char *, size_t, const char *, ...);
+extern int lx_sprintf(char *, const char *, ...);
 extern int lx_sscanf(const char *, const char *, ...);
 extern int lx_fscanf(FILE *, const char *, ...);
 extern int lx___printf_chk(int, const char *, ...);
@@ -632,6 +640,7 @@ const struct shim_sym shim_libc_syms[] = {
     {"printf", lx_printf},
     {"fprintf", lx_fprintf},
     {"snprintf", lx_snprintf},
+    {"sprintf", lx_sprintf},
     {"sscanf", lx_sscanf},
     {"__isoc99_sscanf", lx_sscanf},
     {"__isoc99_fscanf", lx_fscanf},

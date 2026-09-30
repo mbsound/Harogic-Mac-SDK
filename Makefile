@@ -25,7 +25,7 @@ LDFLAGS := -arch arm64 -dynamiclib -mmacosx-version-min=14.4 \
 BUILD   := build
 SRCS    := src/elf_loader.c src/htraapi_mac.c src/shim_libc.c src/shim_pthread.c \
            src/shim_cxx.c src/shim_net.c src/shim_usb.c
-CXXSRCS := src/shim_fstream.cpp
+CXXSRCS := src/shim_fstream.cpp src/shim_alloc.cpp
 ASMS    := src/shim_asm.S src/gen/exports.S src/gen/images.S
 OBJS    := $(SRCS:src/%.c=$(BUILD)/%.o) $(CXXSRCS:src/%.cpp=$(BUILD)/%.o) $(ASMS:src/%.S=$(BUILD)/%.o)
 

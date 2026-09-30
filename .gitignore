@@ -3,10 +3,11 @@
 /dist/
 /src/gen/
 
-# Harogic's SDK binaries and headers are not redistributed here: download the
-# Linux SDK from Harogic and unzip it into vendor/ (see vendor/README.md).
+# vendor/Linux_API is the Harogic SDK this port is built and tested against
+# (see vendor/README.md). Other SDK versions dropped into vendor/ stay local.
 /vendor/*
 !/vendor/README.md
+!/vendor/Linux_API/
 
 .DS_Store
 __pycache__/

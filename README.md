@@ -20,7 +20,8 @@ the USB protocol, this project loads the Linux binaries directly:
 | `src/shim_libc.c`, `shim_asm.S` | glibc → libSystem: variadic calls (Linux passes varargs in registers, Apple on the stack), `errno` values, `open`/`fcntl` flags, `dirent`, `_FORTIFY_SOURCE` entry points, `/proc/self/exe`, `/etc/htrausb.conf`. |
 | `src/shim_pthread.c` | glibc and macOS pthread objects differ in size and initializers; Linux-side objects hold pointers to native ones. |
 | `src/shim_cxx.c`, `shim_fstream.cpp` | Runs against Homebrew GCC's libstdc++. Bridges the parts whose layout differs between Linux and Darwin: `condition_variable`, futexes, `ctype<char>` tables, file streams (`mutex`/`mbstate_t` sizes), and `tellg` (`streampos` is 16 vs 136 bytes). |
-| `src/shim_net.c` | epoll on kqueue, socket constants and `sockaddr` layout (Ethernet-attached analyzers). |
+| `src/shim_net.c` | epoll on kqueue, socket constants and `sockaddr` layout, `getifaddrs`, UDP broadcast discovery (Ethernet-attached analyzers). |
+| `src/shim_alloc.cpp` | Pads every vendor heap allocation by 16 bytes. glibc's chunk slack hides small overruns in the vendor code (e.g. a 1-byte overrun in `Device_GetByteStream_IFACalData` on every open); macOS's allocator doesn't, and aborts later. |
 | `src/shim_usb.c` | libusb argument widening, plus streaming read-ahead (see below). |
 | `tools/gen_build.py` | Embeds the vendor ELFs in the dylib and generates the exported API trampolines. |
 
@@ -28,10 +29,10 @@ the USB protocol, this project loads the Linux binaries directly:
 
 1. Install the tools: `brew install gcc libusb binutils` (plus Xcode command
    line tools).
-2. Download Harogic's **Linux** SDK (`Linux_API-x-y-z.zip`) and unzip it into
-   `vendor/` so that `vendor/Linux_API/htraapi/lib/aarch64/` exists. The SDK
-   is not included in this repository. Use the version that matches your
-   analyzer's firmware.
+2. The Harogic Linux SDK the port is tested with (0.55.89) is included in
+   `vendor/Linux_API/`. For another version, pass `SDK=` (below). The SDK must
+   match your analyzer's firmware; see
+   [vendor/README.md](vendor/README.md#firmware-compatibility).
 3. Build:
 
 ```bash
@@ -106,3 +107,9 @@ Build them with `make examples`:
 - `examples/mode_test.c [state swp rta iqs det mscan]`: exercises every mode.
   Set `HTRA_DECIM` for IQS/RTA decimation and `HTRA_SWEEPS` for the SWP stress
   count.
+
+## Licence
+
+This port is released under the [MIT licence](LICENSE). The Harogic SDK in
+[`vendor/Linux_API`](vendor/README.md) is Harogic's and is included unchanged;
+it is not covered by this project's licence.

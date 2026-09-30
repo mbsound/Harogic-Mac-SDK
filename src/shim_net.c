@@ -9,7 +9,11 @@
 #include "shim.h"
 
 #include <errno.h>
+#include <arpa/inet.h>
 #include <fcntl.h>
+#include <ifaddrs.h>
+#include <net/if.h>
+#include <stdlib.h>
 #include <netinet/in.h>
 #include <netinet/tcp.h>
 #include <poll.h>
@@ -162,6 +166,93 @@ static int lx_connect(int fd, const void *addr, socklen_t len) {
     return connect(fd, (struct sockaddr *)&ss, n) ? (int)shim_fail() : 0;
 }
 
+static int lx_bind(int fd, const void *addr, socklen_t len) {
+    struct sockaddr_storage ss;
+    socklen_t n = sa_from_linux(addr, len, &ss);
+    return bind(fd, (struct sockaddr *)&ss, n) ? (int)shim_fail() : 0;
+}
+
+static int lx_getsockname(int fd, void *addr, socklen_t *alen) {
+    struct sockaddr_storage ss;
+    socklen_t sl = sizeof ss;
+    if (getsockname(fd, (struct sockaddr *)&ss, &sl)) return (int)shim_fail();
+    sa_to_linux(&ss, sl, addr, alen);
+    return 0;
+}
+
+static int lx_inet_pton(int af, const char *src, void *dst) {
+    int r = inet_pton(af_from_linux(af), src, dst);
+    return r < 0 ? (int)shim_fail() : r;
+}
+
+static const char *lx_inet_ntop(int af, const void *src, char *dst, socklen_t size) {
+    const char *r = inet_ntop(af_from_linux(af), src, dst, size);
+    if (!r) shim_fail();
+    return r;
+}
+
+/* getifaddrs: struct ifaddrs has the same layout on both systems, but the
+ * sockaddrs it points to, the flag bits and ifa_data do not. Build a Linux
+ * copy holding only IPv4/IPv6 entries; each entry is one allocation. */
+struct lx_ifaddrs {
+    struct lx_ifaddrs *ifa_next;
+    char *ifa_name;
+    unsigned int ifa_flags;
+    void *ifa_addr, *ifa_netmask, *ifa_broadaddr; /* ifa_ifu union */
+    void *ifa_data;
+};
+
+enum { LX_IFF_MULTICAST = 0x1000 };
+
+static void *sa_copy_linux(const struct sockaddr *sa, int family, uint8_t *out) {
+    if (!sa) return NULL;
+    size_t n = sa->sa_len < sizeof(struct sockaddr_storage) ? sa->sa_len : sizeof(struct sockaddr_storage);
+    memcpy(out, sa, n); /* the rest of out is zero: macOS netmasks may be truncated */
+    uint16_t fam = (uint16_t)af_to_linux(family);
+    memcpy(out, &fam, 2);
+    return out;
+}
+
+static int lx_getifaddrs(struct lx_ifaddrs **out) {
+    struct ifaddrs *list;
+    if (getifaddrs(&list)) return (int)shim_fail();
+    struct lx_ifaddrs *head = NULL, **tail = &head;
+    const size_t ss = sizeof(struct sockaddr_storage);
+    for (struct ifaddrs *i = list; i; i = i->ifa_next) {
+        if (!i->ifa_addr || (i->ifa_addr->sa_family != AF_INET && i->ifa_addr->sa_family != AF_INET6))
+            continue;
+        size_t name_len = strlen(i->ifa_name) + 1;
+        uint8_t *block = calloc(1, sizeof(struct lx_ifaddrs) + 3 * ss + name_len);
+        if (!block) {
+            freeifaddrs(list);
+            errno = ENOMEM;
+            return (int)shim_fail();
+        }
+        struct lx_ifaddrs *e = (struct lx_ifaddrs *)block;
+        uint8_t *addrs = block + sizeof *e;
+        int fam = i->ifa_addr->sa_family;
+        e->ifa_name = (char *)(addrs + 3 * ss);
+        memcpy(e->ifa_name, i->ifa_name, name_len);
+        e->ifa_flags = (i->ifa_flags & 0x3FF) | ((i->ifa_flags & IFF_MULTICAST) ? LX_IFF_MULTICAST : 0);
+        e->ifa_addr = sa_copy_linux(i->ifa_addr, fam, addrs);
+        e->ifa_netmask = sa_copy_linux(i->ifa_netmask, fam, addrs + ss);
+        e->ifa_broadaddr = sa_copy_linux(i->ifa_dstaddr, fam, addrs + 2 * ss);
+        *tail = e;
+        tail = &e->ifa_next;
+    }
+    freeifaddrs(list);
+    *out = head;
+    return 0;
+}
+
+static void lx_freeifaddrs(struct lx_ifaddrs *list) {
+    while (list) {
+        struct lx_ifaddrs *next = list->ifa_next;
+        free(list);
+        list = next;
+    }
+}
+
 static int msg_flags(int f) {
     int m = f & (MSG_OOB | MSG_PEEK | MSG_WAITALL);
     if (f & LX_MSG_DONTWAIT) m |= MSG_DONTWAIT;
@@ -170,6 +261,12 @@ static int msg_flags(int f) {
 
 static ssize_t lx_send(int fd, const void *buf, size_t n, int flags) {
     ssize_t r = send(fd, buf, n, msg_flags(flags));
+    return r < 0 ? shim_fail() : r;
+}
+static ssize_t lx_sendto(int fd, const void *buf, size_t n, int flags, const void *addr, socklen_t alen) {
+    struct sockaddr_storage ss;
+    socklen_t sl = addr ? sa_from_linux(addr, alen, &ss) : 0;
+    ssize_t r = sendto(fd, buf, n, msg_flags(flags), addr ? (struct sockaddr *)&ss : NULL, sl);
     return r < 0 ? shim_fail() : r;
 }
 static ssize_t lx_recv(int fd, void *buf, size_t n, int flags) {
@@ -264,6 +361,14 @@ const struct shim_sym shim_net_syms[] = {
     {"timerfd_settime", lx_unavailable},
     {"socket", lx_socket},
     {"connect", lx_connect},
+    {"bind", lx_bind},
+    {"getsockname", lx_getsockname},
+    {"sendto", lx_sendto},
+    {"inet_pton", lx_inet_pton},
+    {"inet_ntop", lx_inet_ntop},
+    {"getifaddrs", lx_getifaddrs},
+    {"freeifaddrs", lx_freeifaddrs},
+    {"if_nametoindex", if_nametoindex}, /* same ABI */
     {"send", lx_send},
     {"recv", lx_recv},
     {"recvfrom", lx_recvfrom},
