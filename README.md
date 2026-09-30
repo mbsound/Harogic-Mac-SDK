@@ -50,10 +50,17 @@ app). Headers are in `dist/htraapi-macos-arm64/include/`.
 
 ## Use
 
+**Prebuilt:** download `Harogic-Mac-SDK-<version>-arm64.zip` from
+[Releases](https://github.com/mbsound/Harogic-Mac-SDK/releases): no Homebrew or
+build needed. Its README covers first-run setup.
+
 ```python
 import ctypes
 dll = ctypes.CDLL("dist/htraapi-macos-arm64/lib/libhtraapi.dylib")
 ```
+
+In C, include `<stdbool.h>` and `<stdint.h>` before `htra_api.h` (Harogic's
+header uses `bool`).
 
 ```bash
 clang -Idist/htraapi-macos-arm64/include app.c -Ldist/htraapi-macos-arm64/lib -lhtraapi \
