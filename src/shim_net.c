@@ -13,7 +13,9 @@
 #include <fcntl.h>
 #include <ifaddrs.h>
 #include <net/if.h>
+#include <stdio.h>
 #include <stdlib.h>
+#include <time.h>
 #include <netinet/in.h>
 #include <netinet/tcp.h>
 #include <poll.h>
@@ -38,6 +40,25 @@ struct lx_epoll_event { /* not packed on aarch64 */
     uint32_t events;
     uint64_t data;
 };
+
+/* HTRAAPI_TRACE_NET=1: log socket reads and epoll wakeups with timestamps. */
+static int net_trace = -1;
+static double trace_t0;
+#define NET_TRACE(...)                                                                \
+    do {                                                                              \
+        if (net_trace < 0) {                                                          \
+            net_trace = getenv("HTRAAPI_TRACE_NET") != NULL;                          \
+            struct timespec ts_;                                                      \
+            clock_gettime(CLOCK_MONOTONIC, &ts_);                                     \
+            trace_t0 = ts_.tv_sec + ts_.tv_nsec * 1e-9;                               \
+        }                                                                             \
+        if (net_trace) {                                                              \
+            struct timespec ts_;                                                      \
+            clock_gettime(CLOCK_MONOTONIC, &ts_);                                     \
+            fprintf(stderr, "[net %8.3f] ", ts_.tv_sec + ts_.tv_nsec * 1e-9 - trace_t0); \
+            fprintf(stderr, __VA_ARGS__);                                             \
+        }                                                                             \
+    } while (0)
 
 static int lx_epoll_create1(int flags) {
     int kq = kqueue();
@@ -95,6 +116,12 @@ static int lx_epoll_wait(int kq, struct lx_epoll_event *out, int max, int timeou
     }
     int n = kevent(kq, NULL, 0, kev, max, tp);
     if (n < 0) return (int)shim_fail();
+    for (int i = 0; i < n; i++)
+        NET_TRACE("epoll_wait(%d ms): fd %lu %s%s%s data %ld\n", timeout_ms, (unsigned long)kev[i].ident,
+                  kev[i].filter == EVFILT_READ ? "READ" : kev[i].filter == EVFILT_WRITE ? "WRITE" : "?",
+                  kev[i].flags & EV_EOF ? " EOF" : "", kev[i].flags & EV_ERROR ? " ERROR" : "",
+                  (long)kev[i].data);
+    if (!n) NET_TRACE("epoll_wait(%d ms): timeout\n", timeout_ms);
     for (int i = 0; i < n; i++) {
         uint32_t e = 0;
         if (kev[i].flags & EV_ERROR) e |= LX_EPOLLERR;
@@ -261,6 +288,7 @@ static int msg_flags(int f) {
 
 static ssize_t lx_send(int fd, const void *buf, size_t n, int flags) {
     ssize_t r = send(fd, buf, n, msg_flags(flags));
+    NET_TRACE("send(fd %d, %zu) -> %zd\n", fd, n, r);
     return r < 0 ? shim_fail() : r;
 }
 static ssize_t lx_sendto(int fd, const void *buf, size_t n, int flags, const void *addr, socklen_t alen) {
@@ -271,6 +299,7 @@ static ssize_t lx_sendto(int fd, const void *buf, size_t n, int flags, const voi
 }
 static ssize_t lx_recv(int fd, void *buf, size_t n, int flags) {
     ssize_t r = recv(fd, buf, n, msg_flags(flags));
+    NET_TRACE("recv(fd %d, %zu) -> %zd%s\n", fd, n, r, r < 0 && errno == EAGAIN ? " EAGAIN" : "");
     return r < 0 ? shim_fail() : r;
 }
 static ssize_t lx_recvfrom(int fd, void *buf, size_t n, int flags, void *addr, socklen_t *alen) {
@@ -281,7 +310,11 @@ static ssize_t lx_recvfrom(int fd, void *buf, size_t n, int flags, void *addr, s
     sa_to_linux(&ss, sl, addr, alen);
     return r;
 }
-static int lx_shutdown(int fd, int how) { return shutdown(fd, how) ? (int)shim_fail() : 0; }
+static int lx_shutdown(int fd, int how) {
+    int r = shutdown(fd, how);
+    NET_TRACE("shutdown(fd %d, %d) -> %d%s\n", fd, how, r, r ? strerror(errno) : "");
+    return r ? (int)shim_fail() : 0;
+}
 static int lx_poll(struct pollfd *fds, nfds_t n, int timeout) {
     int r = poll(fds, n, timeout); /* struct and POLL* bits match */
     return r < 0 ? (int)shim_fail() : r;
@@ -324,7 +357,18 @@ static int lx_setsockopt(int fd, int level, int opt, const void *val, socklen_t 
         errno = ENOPROTOOPT;
         return (int)shim_fail();
     }
-    return setsockopt(fd, level, opt, val, len) ? (int)shim_fail() : 0;
+    int r = setsockopt(fd, level, opt, val, len);
+    /* Linux silently caps SO_RCVBUF/SO_SNDBUF at the system maximum; macOS
+     * rejects values above kern.ipc.maxsockbuf (ENOBUFS). The SDK asks for
+     * 32 MB, so cap it the Linux way instead of leaving the default buffer. */
+    if (r && errno == ENOBUFS && level == SOL_SOCKET && (opt == SO_RCVBUF || opt == SO_SNDBUF) &&
+        len == sizeof(int)) {
+        for (int size = *(const int *)val / 2; r && size >= 65536; size /= 2)
+            r = setsockopt(fd, level, opt, &size, sizeof size);
+    }
+    NET_TRACE("setsockopt(level %d, opt 0x%x, %d) -> %d\n", level, opt,
+              len >= sizeof(int) ? *(const int *)val : -1, r);
+    return r ? (int)shim_fail() : 0;
 }
 
 static int lx_getsockopt(int fd, int level, int opt, void *val, socklen_t *len) {

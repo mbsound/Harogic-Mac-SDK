@@ -86,6 +86,7 @@ files.
 | `HTRAAPI_DATA_DIR` | Directory holding `CalFile/` and an optional `htrausb.conf`. |
 | `HTRAAPI_TRACE=1` | Loader/shim log, plus a crash report with vendor symbol names. |
 | `HTRAAPI_TRACE_IMPORTS=1` | Log every call the vendor code makes into libc/libusb/liquid. |
+| `HTRAAPI_TRACE_NET=1` | Log socket sends/receives and epoll wakeups with timestamps (Ethernet debugging). |
 | `HTRAAPI_USB_READAHEAD=n` | Streaming read-ahead queue depth (default 16; 0 disables). |
 
 ## Status (SAN-60, SDK 0.55.89)
@@ -101,7 +102,7 @@ files.
 | Supply voltage/current (`Device_QueryPowerSupplyState`) | ✅ live, also while streaming |
 | `libDigitalSigDemod` plugin | ✅ loads; `Demod_Open` needs Harogic's demod licence file (-60 otherwise, same as Linux) |
 | PCIe devices | ❌ Linux kernel driver only |
-| Ethernet devices (NX series) | Shimmed but untested |
+| Ethernet (tested: model 0x43 on 1 GbE) | ✅ open, sweeps, IQS at 100% of the rate. See [Ethernet analyzers](#ethernet-analyzers). |
 
 **Power.** For high-rate streaming, run the analyzer from its power supply.
 Bus-powered, it dropped off USB at 62.5 MS/s, and at 31 MS/s after sustained
@@ -111,6 +112,28 @@ the USB port current rose to 0.85 A during RTA, close to USB 3's 0.9 A port
 limit. `Device_QueryPowerSupplyState` reports voltage and current on both
 ports (the figures SAStudio shows); `build/stream_test` prints them.
 
+## Ethernet analyzers
+
+Open with `PhysicalInterface = ETH`, `DevicePowerSupply = Others`,
+`ETH_IPVersion = IPv4`, the analyzer's address in `ETH_IPAddress[0..3]`, and
+`ETH_RemotePort = 5000` (see `examples/net_test.c`).
+
+- **Discovery:** `Device_GetNetworkDeviceList` and `Device_SetNetworkDeviceIP` are
+  stubs in Harogic's Linux SDK (they return 10068/10069 without touching the
+  network), so they are on macOS too. Connect by IP, or find analyzers by probing
+  TCP ports 5000 and 9000 on the local subnet.
+- **Stalled connections:** roughly 1 in 4 opens takes ~21 s instead of ~3 s. The
+  analyzer stops answering part-way through the handshake and `Device_Open` only
+  returns after the SDK's read timeouts (6 × `ETH_ReadTimeOut`); that session is
+  dead, and every later call fails with 10060. A socket-level trace shows the Mac
+  sending every byte and closing cleanly, so this appears to be the analyzer or the
+  SDK's protocol (not yet compared with Linux). Workaround: if `Device_Open` takes
+  much longer than usual (e.g. >12 s), `Device_Close` and open again. A shorter
+  `ETH_ReadTimeOut` does not help: below ~2 s normal opens fail (-3), because the
+  analyzer takes ~2 s to answer the first request.
+- `SO_RCVBUF`: the SDK asks for 32 MB; like Linux, the shim caps it at the system
+  maximum instead of failing.
+
 ## Examples
 
 Build them with `make examples`:
@@ -119,6 +142,8 @@ Build them with `make examples`:
 - `examples/mode_test.c [state swp rta iqs det mscan]`: exercises every mode.
   Set `HTRA_DECIM` for IQS/RTA decimation and `HTRA_SWEEPS` for the SWP stress
   count.
+- `examples/net_test.c [ip]`: open an Ethernet analyzer, power readout, 20
+  sweeps and 5 s of IQS (`HTRA_PORT` overrides port 5000).
 - `examples/stream_test.c iqs|rta [seconds] [decimate]`: sustained streaming
   test. Reports the delivered rate, dropped packets (from the device
   timestamps), errors, temperature, and supply voltage/current before and after
