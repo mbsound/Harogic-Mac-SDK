@@ -1,0 +1,3 @@
+# libstdc++fs.a (std::experimental::filesystem), used by vendor plugins
+__ZNSt12experimental10filesystem*
+__ZNKSt12experimental10filesystem*
