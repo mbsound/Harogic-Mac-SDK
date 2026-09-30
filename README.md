@@ -94,17 +94,22 @@ files.
 |---|---|
 | Device open / info / state / close, calibration load from files or flash | ✅ |
 | SWP: 1000 full 50 MHz–6 GHz sweeps at ~87 sweeps/s, zero errors | ✅ |
-| RTA, IQS (+ DSP FFT/DDC), DET, MSCAN | ✅ at ≤31 MS/s |
-| IQS/RTA at the top rate (62.5 MS/s, ~250 MB/s) | ⚠️ the analyzer drops off USB. See below. |
+| RTA, IQS (+ DSP FFT/DDC), DET, MSCAN | ✅ |
+| IQS at 62.5 MS/s (250 MB/s), 5-minute soak | ✅ 100.0% of the rate, 0 errors, 0 dropped packets (analyzer on its power supply) |
+| RTA at full bandwidth (101.6 MHz span), 60 s | ✅ 100.0% real-time coverage, 0 errors |
+| IQS at decimation 1 (125 MS/s, 500 MB/s) | ❌ more than USB 3 (5 Gbit/s) sustains in practice; stalls |
+| Supply voltage/current (`Device_QueryPowerSupplyState`) | ✅ live, also while streaming |
 | `libDigitalSigDemod` plugin | ✅ loads; `Demod_Open` needs Harogic's demod licence file (-60 otherwise, same as Linux) |
 | PCIe devices | ❌ Linux kernel driver only |
 | Ethernet devices (NX series) | Shimmed but untested |
 
-**Top-rate streaming.** At 62.5 MS/s, and at 31 MS/s after sustained activity,
-the analyzer disconnects from the bus (`kIOReturnNotResponding`, then a hotplug
-detach). It still happens with 3 MB of USB reads queued ahead, so host latency
-is ruled out. The pattern points to power or USB topology (a bus-powered hub).
-Try a direct Mac port and the analyzer's external power supply.
+**Power.** For high-rate streaming, run the analyzer from its power supply.
+Bus-powered, it dropped off USB at 62.5 MS/s, and at 31 MS/s after sustained
+activity (`kIOReturnNotResponding`, then a hotplug detach). On its power supply
+the same tests run clean: the SAN-60 drew about 10 W from the power port, and
+the USB port current rose to 0.85 A during RTA, close to USB 3's 0.9 A port
+limit. `Device_QueryPowerSupplyState` reports voltage and current on both
+ports (the figures SAStudio shows); `build/stream_test` prints them.
 
 ## Examples
 
@@ -114,6 +119,10 @@ Build them with `make examples`:
 - `examples/mode_test.c [state swp rta iqs det mscan]`: exercises every mode.
   Set `HTRA_DECIM` for IQS/RTA decimation and `HTRA_SWEEPS` for the SWP stress
   count.
+- `examples/stream_test.c iqs|rta [seconds] [decimate]`: sustained streaming
+  test. Reports the delivered rate, dropped packets (from the device
+  timestamps), errors, temperature, and supply voltage/current before and after
+  (`HTRA_POWER_DURING=1` also reads them every 5 s while streaming).
 
 ## Licence
 

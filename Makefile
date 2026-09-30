@@ -64,7 +64,7 @@ $(BUILD)/libhtraapi.dylib: $(OBJS) src/gen/exports.txt
 	$(CC) $(LDFLAGS) $(OBJS) -o $@
 	codesign -f -s - $@
 
-EXAMPLES := $(BUILD)/swp_test $(BUILD)/mode_test
+EXAMPLES := $(BUILD)/swp_test $(BUILD)/mode_test $(BUILD)/stream_test
 
 examples: $(EXAMPLES)
 
