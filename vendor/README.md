@@ -23,7 +23,7 @@ Linux. Use the SDK that matches your analyzer's firmware:
 | 0.55.88 | `0x3758` | ❌ -49 | |
 | 0.55.89 (`SAN-828` package, included) | `0x3759` | ✅ | |
 | 0.55.89 (generic `Install_Linux_API` package) | `0x3759` | not tested | A different, older build with the same version number: lacks `Device_GetSupportedFunctions`, `Device_GetDecimateFactorList`, `Device_GetBusBandwidth`, `Device_GetOnboardMemorySize` and the demod plugin. |
-| 0.55.100 (`SA_Linux_API`) | `0x3764` | ❌ -49 | Builds and loads (all imports resolved); expects newer firmware (the library references 0.55.109). |
+| 0.55.100 (`SA_Linux_API`, in `vendor/Linux_API-0.55.100/`) | `0x3764` | ❌ -49 | For firmware 0.55.109 (`0x376d`): opens it (0.55.89 then returns -49) and is the build through which the SAN-60's GNSS receiver reports (`Device_GetGNSSInfo`: satellites, fix, position, UTC). Build with `make SDK=vendor/Linux_API-0.55.100`. |
 
 ## Using another SDK version
 

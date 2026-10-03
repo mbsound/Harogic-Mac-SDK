@@ -299,6 +299,13 @@ void ifstream_ctor_str(void *p, const std::string &n, std::ios_base::openmode m)
     new (p) lx::ifstream(n, m);
 }
 void ifstream_dtor(lx::ifstream *p) { p->~ifstream(); }
+/* basic_ifstream::open(const std::string&, openmode): a default-constructed stream opened
+ * afterwards (SDK 0.55.100 reads the device config file this way). Without this binding
+ * the call lands in Darwin's libstdc++, which expects its own, larger, layout. */
+void ifstream_open_str(lx::ifstream *p, const std::string &n, std::ios_base::openmode m) {
+    if (!p->fb_.open(n.c_str(), m | std::ios_base::in)) p->setstate(std::ios_base::failbit);
+    else p->clear();
+}
 
 void ofstream_ctor_str(void *p, const std::string &n, std::ios_base::openmode m) {
     new (p) lx::ofstream(n, m);
@@ -341,6 +348,8 @@ extern "C" const struct shim_sym shim_fstream_syms[] = {
     SYM("_ZNSt14basic_ifstreamIcSt11char_traitsIcEEC1ERKNSt7__cxx1112basic_stringIcS1_SaIcEEESt13_Ios_Openmode",
         &ifstream_ctor_str),
     SYM("_ZNSt14basic_ifstreamIcSt11char_traitsIcEED1Ev", &ifstream_dtor),
+    SYM("_ZNSt14basic_ifstreamIcSt11char_traitsIcEE4openERKNSt7__cxx1112basic_stringIcS1_SaIcEEESt13_Ios_Openmode",
+        &ifstream_open_str),
     SYM("_ZNSt14basic_ofstreamIcSt11char_traitsIcEEC1ERKNSt7__cxx1112basic_stringIcS1_SaIcEEESt13_Ios_Openmode",
         &ofstream_ctor_str),
     SYM("_ZNSt14basic_ofstreamIcSt11char_traitsIcEED1Ev", &ofstream_dtor),

@@ -87,6 +87,7 @@ files.
 | `HTRAAPI_TRACE=1` | Loader/shim log, plus a crash report with vendor symbol names. |
 | `HTRAAPI_TRACE_IMPORTS=1` | Log every call the vendor code makes into libc/libusb/liquid. |
 | `HTRAAPI_TRACE_NET=1` | Log socket sends/receives and epoll wakeups with timestamps (Ethernet debugging). |
+| `HTRAAPI_NET_IF=en7` | Pin every socket to one network interface. For an Ethernet analyzer on an adapter whose subnet another interface (Wi-Fi) also uses: without it the system's routing picks the interface. Read at each socket creation, so it can be set after the library is loaded. |
 | `HTRAAPI_USB_READAHEAD=n` | Streaming read-ahead queue depth (default 16; 0 disables). |
 
 ## Status (SAN-60, SDK 0.55.89)

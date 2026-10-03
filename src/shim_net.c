@@ -160,6 +160,23 @@ static int lx_socket(int domain, int type, int proto) {
     if (fd < 0) return (int)shim_fail();
     int one = 1;
     setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &one, sizeof one);
+    /* HTRAAPI_NET_IF=en7 pins every socket to that network interface. Needed when two
+     * interfaces are on the same subnet (the analyzer's Ethernet adapter and a Wi-Fi network
+     * that also uses 192.168.1.x): the routing table then picks one of them, not
+     * necessarily the one the analyzer is on. Read at each call so it can be set after
+     * the library is loaded. */
+    const char *ifname = getenv("HTRAAPI_NET_IF");
+    if (ifname && *ifname) {
+        unsigned idx = if_nametoindex(ifname);
+        int r = -1;
+        if (idx) {
+            if (af_from_linux(domain) == AF_INET6)
+                r = setsockopt(fd, IPPROTO_IPV6, IPV6_BOUND_IF, &idx, sizeof idx);
+            else
+                r = setsockopt(fd, IPPROTO_IP, IP_BOUND_IF, &idx, sizeof idx);
+        }
+        NET_TRACE("socket bound to %s (index %u) -> %d\n", ifname, idx, r);
+    }
     if (nonblock) fcntl(fd, F_SETFL, fcntl(fd, F_GETFL) | O_NONBLOCK);
     if (cloexec) fcntl(fd, F_SETFD, FD_CLOEXEC);
     return fd;
