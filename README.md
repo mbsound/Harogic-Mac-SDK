@@ -5,7 +5,8 @@ aarch64 Linux SDK (`libhtraapi.so`, `libliquid.so`, `libDigitalSigDemod.so`)
 inside a normal Mac process. It exports the same C API as the Linux/Windows
 SDK, so existing C, C++ and Python (`ctypes`) code works unchanged.
 
-Tested with SDK 0.55.89 and a SAN-60 (model 0x42, firmware 0x3768) over USB 3.
+Tested with SDK 0.55.89 and a SAN-60 (model 0x42, firmware 0x3768) over USB 3, and with SDK
+0.55.100 after that analyzer's update to firmware 0x376d (`make SDK=vendor/Linux_API-0.55.100`).
 
 ## How it works
 
@@ -29,8 +30,9 @@ the USB protocol, this project loads the Linux binaries directly:
 
 1. Install the tools: `brew install gcc libusb binutils` (plus Xcode command
    line tools).
-2. The Harogic Linux SDK the port is tested with (0.55.89) is included in
-   `vendor/Linux_API/`. For another version, pass `SDK=` (below). The SDK must
+2. The Harogic Linux SDKs the port is tested with are included: 0.55.89 in
+   `vendor/Linux_API/` (the default) and 0.55.100 in `vendor/Linux_API-0.55.100/`
+   (for firmware 0.55.109). For another version, pass `SDK=` (below). The SDK must
    match your analyzer's firmware; see
    [vendor/README.md](vendor/README.md#firmware-compatibility).
 3. Build:

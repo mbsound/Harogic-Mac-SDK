@@ -3,11 +3,23 @@
 /dist/
 /src/gen/
 
-# vendor/Linux_API is the Harogic SDK this port is built and tested against
-# (see vendor/README.md). Other SDK versions dropped into vendor/ stay local.
+# vendor/Linux_API (0.55.89) and vendor/Linux_API-0.55.100 are the Harogic SDKs this port
+# is built and tested against (see vendor/README.md): the aarch64 libraries the port loads,
+# the headers and the USB config. Other SDK versions dropped into vendor/ stay local.
 /vendor/*
 !/vendor/README.md
 !/vendor/Linux_API/
+!/vendor/Linux_API-0.55.100/
+/vendor/Linux_API-0.55.100/*
+!/vendor/Linux_API-0.55.100/htraapi/
+/vendor/Linux_API-0.55.100/htraapi/lib/*
+!/vendor/Linux_API-0.55.100/htraapi/lib/aarch64/
+/vendor/Linux_API-0.55.100/htraapi/lib/aarch64/*
+!/vendor/Linux_API-0.55.100/htraapi/lib/aarch64/libhtraapi.so.*
+!/vendor/Linux_API-0.55.100/htraapi/lib/aarch64/libliquid.so
+!/vendor/Linux_API-0.55.100/htraapi/lib/aarch64/libDigitalSigDemod.so
+/vendor/Linux_API-0.55.100/htraapi/configs/*
+!/vendor/Linux_API-0.55.100/htraapi/configs/htrausb.conf
 
 .DS_Store
 __pycache__/

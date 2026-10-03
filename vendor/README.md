@@ -1,13 +1,17 @@
 # Harogic Linux SDK
 
-`vendor/Linux_API/` is Harogic's own aarch64 Linux SDK, unmodified, which this
-port loads at run time. It is the version the port is built and tested against:
+`vendor/Linux_API/` and `vendor/Linux_API-0.55.100/` are Harogic's own aarch64 Linux
+SDKs, unmodified, which this port loads at run time. They are the versions the port is
+built and tested against (only the parts the port uses are included: the aarch64
+libraries below, the headers and `htrausb.conf`):
 
-| | |
-|---|---|
-| SDK | 0.55.89 (API version `0x3759`), Harogic's `Linux_API-SAN-828` package |
-| Libraries used | `libhtraapi.so.0.55.89`, `libliquid.so`, `libDigitalSigDemod.so` (aarch64) |
-| Tested analyzer | SAN-60 (model `0x42`), firmware `0x3768` (0.55.104), USB 3 |
+| | `vendor/Linux_API/` (the default) | `vendor/Linux_API-0.55.100/` |
+|---|---|---|
+| SDK | 0.55.89 (API version `0x3759`), Harogic's `Linux_API-SAN-828` package | 0.55.100 (API version `0x3764`), Harogic's `SA_Linux_API` package |
+| Libraries used | `libhtraapi.so.0.55.89`, `libliquid.so`, `libDigitalSigDemod.so` | `libhtraapi.so.0.55.100`, `libliquid.so`, `libDigitalSigDemod.so` |
+| For firmware | 0.55.104 (`0x3768`) | 0.55.109 (`0x376d`) |
+| Tested analyzer | SAN-60 (model `0x42`) over USB 3; an Ethernet analyzer (model `0x43`) | SAN-60 (model `0x42`) over USB, including its GNSS receiver |
+| Build | `make` | `make SDK=vendor/Linux_API-0.55.100` |
 
 The Harogic SDK is © Harogic and is included here, unchanged, so the port builds
 out of the box. It is not covered by this repository's MIT licence.
