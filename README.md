@@ -52,9 +52,18 @@ app). Headers are in `dist/htraapi-macos-arm64/include/`.
 
 ## Use
 
-**Prebuilt:** download `Harogic-Mac-SDK-<version>-arm64.zip` from
+**Prebuilt:** download the zip for your analyzer's firmware from
 [Releases](https://github.com/mbsound/Harogic-Mac-SDK/releases): no Homebrew or
-build needed. Its README covers first-run setup.
+build needed.
+
+| Analyzer firmware | Download |
+|---|---|
+| 0.55.104 (`0x3768`) | `Harogic-Mac-SDK-<version>-arm64-sdk0.55.89.zip` |
+| 0.55.109 (`0x376d`) | `Harogic-Mac-SDK-<version>-arm64-sdk0.55.100.zip` |
+
+A zip downloaded with a browser is quarantined by macOS, and the libraries are not
+notarised, so loading them is refused until the mark is removed:
+`xattr -dr com.apple.quarantine Harogic-Mac-SDK-*`.
 
 ```python
 import ctypes
