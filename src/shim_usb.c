@@ -18,7 +18,8 @@
  *    first so no data is lost.
  *
  *    HTRAAPI_USB_READAHEAD=<n> sets the queue depth (default 16, 0 disables);
- *    HTRAAPI_USB_READAHEAD_STREAK=<n> the reads needed to engage (default 2).
+ *    HTRAAPI_USB_READAHEAD_STREAK=<n> the reads needed to engage (default 2);
+ *    HTRAAPI_USB_STATS=1 prints per-second queue statistics to stderr.
  */
 #include "shim.h"
 
@@ -53,6 +54,7 @@ struct ra_slot {
     unsigned char *buf;
     int done;      /* set by the completion callback */
     int submitted; /* in flight or completed, not yet consumed */
+    double t_submit, t_done;
 };
 
 struct readahead {
@@ -70,6 +72,56 @@ struct readahead {
 static struct readahead g_ra; /* the SDK streams one endpoint at a time */
 static int g_ra_depth = -1;
 
+/* ---- optional per-second statistics (HTRAAPI_USB_STATS=1) --------------- */
+
+static double now_s(void) {
+    struct timeval tv;
+    gettimeofday(&tv, NULL);
+    return tv.tv_sec + tv.tv_usec * 1e-6;
+}
+
+static int g_stats = -1;
+static struct {
+    double t0, start;
+    int done, shorts;        /* read-ahead completions in this second */
+    long bytes;
+    double lat_sum, lat_max; /* submit -> completion */
+    int served, timeouts;    /* sync reads served from the queue */
+    double wait_sum, wait_max;
+    int sync_in, sync_out;   /* plain synchronous transfers */
+    double sync_in_sum, sync_out_sum;
+    int inflight_min;
+} st;
+
+static int stats_on(void) {
+    if (g_stats < 0) {
+        const char *e = getenv("HTRAAPI_USB_STATS");
+        g_stats = e && atoi(e) > 0;
+        st.inflight_min = RA_MAX_DEPTH;
+    }
+    return g_stats;
+}
+
+static void stats_tick(void) {
+    double t = now_s();
+    if (!st.start) st.start = st.t0 = t;
+    if (t - st.t0 < 1.0) return;
+    fprintf(stderr,
+            "[usb-stats] t=%5.1fs ra: %3d done (%2d short, %6.1f MB, lat avg %5.1f max %5.1f ms, inflight min %2d)"
+            " served %3d (wait avg %5.1f max %5.1f ms, %d timeouts) sync: in %d (%.1f ms) out %d (%.2f ms)\n",
+            t - st.start, st.done, st.shorts, st.bytes / 1e6,
+            st.done ? st.lat_sum / st.done * 1e3 : 0, st.lat_max * 1e3,
+            st.inflight_min == RA_MAX_DEPTH ? -1 : st.inflight_min,
+            st.served, st.served ? st.wait_sum / st.served * 1e3 : 0, st.wait_max * 1e3, st.timeouts,
+            st.sync_in, st.sync_in ? st.sync_in_sum / st.sync_in * 1e3 : 0,
+            st.sync_out, st.sync_out ? st.sync_out_sum / st.sync_out * 1e3 : 0);
+    double start = st.start;
+    memset(&st, 0, sizeof st);
+    st.start = start;
+    st.t0 = t;
+    st.inflight_min = RA_MAX_DEPTH;
+}
+
 static int ra_depth(void) {
     if (g_ra_depth < 0) {
         const char *e = getenv("HTRAAPI_USB_READAHEAD");
@@ -81,11 +133,14 @@ static int ra_depth(void) {
 }
 
 static void LIBUSB_CALL ra_callback(struct libusb_transfer *t) {
-    ((struct ra_slot *)t->user_data)->done = 1;
+    struct ra_slot *s = t->user_data;
+    s->t_done = now_s();
+    s->done = 1;
 }
 
 static int ra_submit(struct ra_slot *s) {
     s->done = 0;
+    s->t_submit = now_s();
     libusb_fill_bulk_transfer(s->xfer, g_ra.h, g_ra.ep, s->buf, g_ra.len, ra_callback, s, 0);
     int r = libusb_submit_transfer(s->xfer);
     s->submitted = r == 0;
@@ -201,12 +256,29 @@ static int ra_read(libusb_device_handle *h, uint8_t ep, unsigned char *data, int
         return 0;
     }
     struct ra_slot *s = &g_ra.slot[g_ra.head];
+    int stats = stats_on();
+    double t_wait = stats ? now_s() : 0;
+    if (stats) {
+        int inflight = 0;
+        for (int i = 0; i < g_ra.count; i++)
+            if (g_ra.slot[(g_ra.head + i) % g_ra.depth].done) inflight++;
+        /* completed-but-unread buffers: how far ahead the device is */
+        if (inflight < st.inflight_min) st.inflight_min = inflight;
+    }
     if (!ra_wait(s, timeout)) {
+        if (stats) { st.timeouts++; stats_tick(); }
         if (transferred) *transferred = 0;
         *result = LIBUSB_ERROR_TIMEOUT; /* stays queued; served next call */
         return 1;
     }
     int n = s->xfer->actual_length;
+    if (stats) {
+        double w = now_s() - t_wait, lat = s->t_done - s->t_submit;
+        st.served++; st.wait_sum += w; if (w > st.wait_max) st.wait_max = w;
+        st.done++; st.bytes += n; if (n != g_ra.len) st.shorts++;
+        st.lat_sum += lat; if (lat > st.lat_max) st.lat_max = lat;
+        stats_tick();
+    }
     memcpy(data, s->buf, (size_t)n);
     if (transferred) *transferred = n;
     *result = transfer_status_to_error(s->xfer->status);
@@ -237,8 +309,15 @@ static int w_bulk_transfer(libusb_device_handle *h, uint64_t ep64, unsigned char
     }
 
     int got = 0;
+    double t_sync = stats_on() ? now_s() : 0;
     int r = libusb_bulk_transfer(h, ep, data, len, &got, timeout);
     if (transferred) *transferred = got;
+    if (g_stats) {
+        double d = now_s() - t_sync;
+        if (is_in) { st.sync_in++; st.sync_in_sum += d; }
+        else { st.sync_out++; st.sync_out_sum += d; }
+        stats_tick();
+    }
 
     if (depth && is_in) {
         if (r == 0 && got == len && len >= RA_MIN_LEN && g_ra.h == h && g_ra.ep == ep &&

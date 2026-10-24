@@ -7,6 +7,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <math.h>
 #include <time.h>
 
 #include <stdbool.h>
@@ -63,31 +64,53 @@ int main(int argc, char **argv) {
         return 1;
     }
 
-    double *freq = calloc(ti.FullsweepTracePoints, sizeof *freq);
-    float *pwr = calloc(ti.FullsweepTracePoints, sizeof *pwr);
+    /* A single hop can be longer than the whole trace (88-108 MHz: P=3040,
+     * N=1312), so size the buffers by hops, not by FullsweepTracePoints. */
+    int P = ti.PartialsweepTracePoints, T = ti.TotalHops;
+    /* UserStopIndex isn't reliable for this: at 88-108 MHz with the default
+     * profile it reads 0 over 3 hops, which would put the end at 146 MHz.
+     * Find the user span on the frequency axis instead. */
+    int first = 0, last = T * P - 1;
+    double *freq = calloc((size_t)T * P, sizeof *freq);
+    float *pwr = calloc((size_t)T * P, sizeof *pwr);
+    double *hf = calloc(P, sizeof *hf);
+    float *hp = calloc(P, sizeof *hp);
     MeasAuxInfo_TypeDef aux;
     for (int sweep = 0; sweep < 5; sweep++) {
-        int hop = 0, frame = 0, errors = 0;
+        int hop = 0, frame = 0, errors = 0, got = 0, extra = 0;
+        char *seen = calloc(T, 1);
         t0 = now_s();
-        for (int i = 0; i < ti.TotalHops; i++) {
-            st = SWP_GetPartialSweep(&dev, freq + i * ti.PartialsweepTracePoints,
-                                     pwr + i * ti.PartialsweepTracePoints, &hop, &frame, &aux);
-            if (st != APIRETVAL_NoError) errors++;
+        /* With spur rejection on, the SDK can return extra frames (hop >=
+         * TotalHops, at unrelated frequencies), so read until each hop has
+         * arrived once rather than exactly TotalHops times. */
+        for (int i = 0; i < 4 * T + 8 && got < T && errors < T; i++) {
+            st = SWP_GetPartialSweep(&dev, hf, hp, &hop, &frame, &aux);
+            if (st != APIRETVAL_NoError) { errors++; continue; }
+            if (hop < 0 || hop >= T || seen[hop]) { extra++; continue; }
+            if (fabs(hf[0] - (ti.StartFreq_Hz + (double)hop * P * ti.TraceBinBW_Hz)) > 2 * ti.TraceBinBW_Hz) { extra++; continue; }
+            seen[hop] = 1; got++;
+            memcpy(freq + (size_t)hop * P, hf, P * sizeof *hf);
+            memcpy(pwr + (size_t)hop * P, hp, P * sizeof *hp);
         }
+        free(seen);
         double dt = now_s() - t0;
         if (sweep == 0) {
-            int P = ti.PartialsweepTracePoints, N = ti.FullsweepTracePoints;
-            printf("  freq axis: [0]=%.6f [1]=%.6f [P-1]=%.6f [P]=%.6f [N-1]=%.6f MHz (P=%d)\n",
-                   freq[0] / 1e6, freq[1] / 1e6, freq[P - 1] / 1e6, freq[P] / 1e6, freq[N - 1] / 1e6, P);
+            double half = ti.TraceBinBW_Hz / 2;
+            while (first < last && freq[first] < out.StartFreq_Hz - half) first++;
+            while (last > first && freq[last] > out.StopFreq_Hz + half) last--;
+        }
+        if (sweep == 0) {
+            printf("  hops %d/%d, %d extra frame(s) skipped\n", got, T, extra);
+            printf("  freq axis: [0]=%.6f [1]=%.6f [P-1]=%.6f [last]=%.6f MHz (P=%d)\n",
+                   freq[0] / 1e6, freq[1] / 1e6, freq[P - 1] / 1e6, freq[last] / 1e6, P);
             printf("  raw UserStartIndex=%u UserStopIndex=%u StartFreq=%.6f MHz AnalysisBW=%.3f MHz\n", ti.UserStartIndex, ti.UserStopIndex, ti.StartFreq_Hz / 1e6, ti.AnalysisBW_Hz / 1e6);
-            printf("  user span: index %u..%u -> %.6f..%.6f MHz (bin %.1f Hz)\n", ti.UserStartIndex,
-                   (N - P) + ti.UserStopIndex, freq[ti.UserStartIndex] / 1e6,
-                   freq[(N - P) + ti.UserStopIndex] / 1e6, ti.TraceBinBW_Hz);
+            printf("  user span: index %d..%d -> %.6f..%.6f MHz (bin %.1f Hz)\n", first,
+                   last, freq[first] / 1e6, freq[last] / 1e6, ti.TraceBinBW_Hz);
         }
         /* Report the three strongest local maxima. */
         int top[3] = {-1, -1, -1};
-        int lo = (int)ti.UserStartIndex;
-        int hi = (ti.FullsweepTracePoints - ti.PartialsweepTracePoints) + (int)ti.UserStopIndex;
+        int lo = first;
+        int hi = last;
         for (int i = lo + 1; i < hi; i++) {
             if (pwr[i] < pwr[i - 1] || pwr[i] < pwr[i + 1]) continue;
             for (int k = 0; k < 3; k++)
@@ -107,6 +130,8 @@ int main(int argc, char **argv) {
     }
     free(freq);
     free(pwr);
+    free(hf);
+    free(hp);
     st = Device_Close(&dev);
     printf("Device_Close: %d\n", st);
     return 0;

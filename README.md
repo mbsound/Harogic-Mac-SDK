@@ -100,6 +100,7 @@ files.
 | `HTRAAPI_TRACE_NET=1` | Log socket sends/receives and epoll wakeups with timestamps (Ethernet debugging). |
 | `HTRAAPI_NET_IF=en7` | Pin every socket to one network interface. For an Ethernet analyzer on an adapter whose subnet another interface (Wi-Fi) also uses: without it the system's routing picks the interface. Read at each socket creation, so it can be set after the library is loaded. |
 | `HTRAAPI_USB_READAHEAD=n` | Streaming read-ahead queue depth (default 16; 0 disables). |
+| `HTRAAPI_USB_STATS=1` | Print per-second read-ahead statistics (completions, latency, waits, short transfers) to stderr. |
 
 ## Status (SAN-60, SDK 0.55.89)
 
